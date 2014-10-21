@@ -1,0 +1,191 @@
+/*
+ * 
+ * ECE-155 Lab 2
+ * Section 203
+ * Group 04
+ * 
+ * Member #1: Hamza Azeem - hwazeem
+ * Member #2: Waleed Chaudhry - w2chaudh
+ * 
+ * Objective: 
+ * 
+ */
+
+package ca.uwaterloo.Lab2_203_04;
+
+import java.util.Arrays;
+
+import android.support.v7.app.ActionBarActivity;
+import android.support.v4.app.Fragment;
+import android.annotation.SuppressLint;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+//Initiate project in MainActivity
+public class MainActivity extends ActionBarActivity {
+
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		setContentView(R.layout.activity_main);
+
+		if (savedInstanceState == null) {
+			getSupportFragmentManager().beginTransaction()
+					.add(R.id.container, new PlaceholderFragment()).commit();
+		}
+	}
+
+	@Override
+	public boolean onCreateOptionsMenu(Menu menu) {
+
+		getMenuInflater().inflate(R.menu.main, menu);
+		return true;
+	}
+
+	@Override
+	public boolean onOptionsItemSelected(MenuItem item) {
+		
+		int id = item.getItemId();
+		if (id == R.id.action_settings) {
+			return true;
+		}
+		return super.onOptionsItemSelected(item);
+	}
+	
+	//Define and instantiate all sensors + graph + button to clear data
+	public static class PlaceholderFragment extends Fragment {
+
+		public PlaceholderFragment() {
+		}
+		
+		//Define Sensor Event Listeners 
+		SensorEventListener accelListener;
+		
+		@SuppressLint("InlinedApi")
+		@Override
+		public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+			View rootView = inflater.inflate(R.layout.fragment_main, container,	false);
+			LinearLayout layout = (LinearLayout) rootView.findViewById(R.id.linLayout);
+			layout.setOrientation(LinearLayout.VERTICAL);
+			LineGraphView graph;
+		
+			graph = new LineGraphView(rootView.getContext(), 100, Arrays.asList("x", "y", "z")); //Define graph
+			
+			TextView accel = new TextView(rootView.getContext()); //Define Accelerometer placeholder
+						
+			Button clearData = new Button(rootView.getContext()); //Define "Clear" button
+			clearData.setText("Clear");
+			
+			//Add objects created above to layout
+			layout.addView(graph);
+			graph.setVisibility(View.VISIBLE); //Make graph visible
+			
+			layout.addView(accel);
+			layout.addView(clearData);
+			
+			//Create all sensors
+			SensorManager sensorManager = (SensorManager) rootView.getContext().getSystemService(SENSOR_SERVICE);
+			Sensor accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION); //Define Accelerometer
+			
+			
+			//Instantiate listeners for each sensor and register them			
+			accelListener = new AccelerometerListener(accel, graph);
+			sensorManager.registerListener(accelListener, accelSensor, SensorManager.SENSOR_DELAY_FASTEST);
+			
+			//Create listener for "Clear" button click to reset sensor data
+			clearData.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                	//Call object reset() method by casting to AllSensorsEventListener (subclass of SensorEventListener)
+                	((AccelerometerListener) accelListener).reset();
+                }
+			});
+			
+			return rootView;
+		}
+	}
+}
+
+//Create subclass of SensorEventListener
+class AccelerometerListener implements SensorEventListener {
+	//Define class variables
+	TextView output;
+	LineGraphView graph;
+	private float[] smoothedAccel = new float[3];
+	private int stepCount = 0;
+	private double maxVal = 8;
+	private double minVal = -4;
+	private double[] maxValues, minValues = new double[3]; //Arrays to hold max/min (record) values for each sensor
+	
+	public AccelerometerListener(TextView outputView, LineGraphView graphView){
+		output = outputView;
+		graph = graphView;
+		smoothedAccel[2] = 0;
+	}
+	/*
+	float[] lowpass(float[] in, float dt, float RC) {
+		float[] out = new float[in.length];
+		float k = dt / (dt + RC);
+		out[0] = 0;
+		for(int i = 1; i < in.length; i++) {
+		out[i] = k * in[i] + (1-k) * out[i-1];
+		}
+		return out;
+	}*/
+	
+	public void onAccuracyChanged(Sensor s, int i) {}
+	public void onSensorChanged(SensorEvent se) {
+		//float[] smoothVal = lowpass(se.values,(float)1, (float)0.1);
+		smoothedAccel[2] += (se.values[2] - smoothedAccel[2]) / 30;
+		maxValues = getMaxValue(se.values, maxValues); //Get max values for passed in Sensor Event values
+		minValues = getMinValue(se.values, minValues); //Get max values for passed in Sensor Event values
+		graph.addPoint(smoothedAccel); //Plot Sensor Event values  for Accelerometer to graph
+		displayText("Accelerometer", "m/s^2", se.values, maxValues, minValues, stepCount); //Display Accelerometer data
+	}
+	
+	public double[] getMaxValue(float[] currVal, double[] maxVal){
+		for(int i=0; i<3; i++) {
+			if(Math.abs(currVal[i]) > Math.abs(maxVal[i])) { //Compare absolute values for current values and old max values
+				maxVal[i] = currVal[i];
+			}
+		}
+		return maxVal;
+	}
+	
+	public double[] getMinValue(float[] currVal, double[] minVal){
+		for(int i=0; i<3; i++) {
+			if(currVal[i] < minVal[i]) { //Compare absolute values for current values and old max values
+				minVal[i] = currVal[i];
+			}
+		}
+		return minVal;
+	}
+	
+	public void displayText(String sensorName, String units, float[] sensorVal, double[] maxVal, double[] minVal, int numSteps) {
+			//Print three-value string format for the rest of the sensors
+			String display = String.format("\nCurrent %s Value (%s): \nX: %.3f \nY: %.3f \nZ: %.3f\n", sensorName, units, sensorVal[0], sensorVal[1], sensorVal[2]);
+			display += String.format("Max Values (%s): \nX:%.3f \nY:%.3f \nZ: %.3f\n", units, maxVal[0], maxVal[1], maxVal[2]);
+			display += String.format("Min Values (%s): \nX:%.3f \nY:%.3f \nZ: %.3f\n", units, minVal[0], minVal[1], minVal[2]);
+			display += String.format("Steps: %s\n", numSteps);
+			output.setText(display);
+	}
+	
+	//Reset graph and max values on button click
+	public void reset() {
+		graph.purge();
+		maxValues = new double[3];
+		minValues = new double[3];		
+		stepCount = 0;
+	}
+	
+}
